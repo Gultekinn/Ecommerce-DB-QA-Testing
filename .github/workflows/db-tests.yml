@@ -1,0 +1,102 @@
+name: Database QA Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  db-qa-tests:
+    name: Run SQL QA Scenarios on MySQL
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: EcommerceQA
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wait for MySQL to be ready
+        run: |
+          echo "Waiting for MySQL..."
+          until mysqladmin ping -h 127.0.0.1 -u root -proot --silent; do
+            sleep 2
+          done
+          echo "MySQL is ready."
+
+      - name: Setup database schema and seed data
+        run: |
+          mysql -h 127.0.0.1 -u root -proot EcommerceQA < database_setup.sql
+          echo "Database setup complete."
+
+      - name: Run QA test scenarios and capture results
+        run: |
+          echo "============================================"
+          echo "   E-commerce Database QA Test Results"
+          echo "============================================"
+
+          echo ""
+          echo "--- Scenario 1: Orders without payments (Critical) ---"
+          mysql -h 127.0.0.1 -u root -proot EcommerceQA -e "
+            SELECT order_id, user_id, status
+            FROM orders
+            WHERE order_id NOT IN (SELECT order_id FROM payments);"
+
+          echo ""
+          echo "--- Scenario 2: Duplicate email registrations ---"
+          mysql -h 127.0.0.1 -u root -proot EcommerceQA -e "
+            SELECT name, email FROM users
+            WHERE email IN (
+              SELECT email FROM users
+              GROUP BY email
+              HAVING COUNT(*) > 1
+            );"
+
+          echo ""
+          echo "--- Scenario 3: Orders for out-of-stock products (Critical) ---"
+          mysql -h 127.0.0.1 -u root -proot EcommerceQA -e "
+            SELECT oi.order_id, p.product_name, p.stock, oi.quantity
+            FROM order_items oi
+            INNER JOIN products p ON oi.product_id = p.product_id
+            WHERE p.stock = 0;"
+
+          echo ""
+          echo "--- Scenario 4: Top customers by spend ---"
+          mysql -h 127.0.0.1 -u root -proot EcommerceQA -e "
+            SELECT u.name, SUM(p.amount) AS total_spent
+            FROM users u
+            INNER JOIN orders o ON u.user_id = o.user_id
+            INNER JOIN payments p ON o.order_id = p.order_id
+            WHERE o.status = 'completed'
+            GROUP BY u.user_id, u.name
+            ORDER BY total_spent DESC
+            LIMIT 5;"
+
+          echo ""
+          echo "--- Scenario 5: Cancelled orders without refunds ---"
+          mysql -h 127.0.0.1 -u root -proot EcommerceQA -e "
+            SELECT o.order_id, o.status AS order_status, p.payment_status, p.amount
+            FROM orders o
+            LEFT JOIN payments p ON o.order_id = p.order_id
+            WHERE o.status = 'cancelled';"
+
+          echo ""
+          echo "============================================"
+          echo "   All scenarios executed successfully."
+          echo "============================================"
