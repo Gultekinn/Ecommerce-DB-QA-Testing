@@ -1,4 +1,4 @@
--- müsahibələrdə "Bizim e-ticarət bazamızda bu problemi necə yoxlayarsan?" deyə qarşına çıxacaq qızıl ssenarilərdir.
+-- müsahibələrdə "Bizim e-ticarət bazamızda bu problemi necə yoxlayarsan?" deyə qarşına çıxacaq  ssenarilərdir.
   -- Ssenari 1: Sifarişi olan amma heç bir ödəniş qeydi olmayan userləri tap (Kritik Xəta!)
   SELECT order_id, user_id, status 
 FROM orders 
